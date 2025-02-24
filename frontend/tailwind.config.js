@@ -7,6 +7,15 @@ export default {
         serif: ['"Crimson Pro"', 'serif'],
         title: ['"Cormorant Garamond"', 'serif'],
       },
+      animation: {
+        gradient: 'gradient 8s ease infinite',
+      },
+      keyframes: {
+        gradient: {
+          '0%, 100%': { 'background-position': '0% 50%' },
+          '50%': { 'background-position': '100% 50%' },
+        },
+      },
     },
   },
   plugins: [],

@@ -1,413 +1,264 @@
 import { FamilyData, FamilyMember } from '../types/family';
 
-type RelationType = 
+type Gender = 'male' | 'female' | 'other';
+
+// Basic relationship types that can be combined to form more complex relationships
+type BasicRelationType = 
   | 'parent'
   | 'child'
   | 'sibling'
-  | 'partner'
-  | 'grandparent'
-  | 'grandchild'
-  | 'aunt/uncle'
-  | 'niece/nephew'
-  | 'cousin'
-  | 'parent-in-law'
-  | 'child-in-law'
-  | 'sibling-in-law'
-  | `great-grandparent`
-  | `great-grandchild`
-  | `great-great-grandparent`
-  | `great-great-grandchild`;
+  | 'spouse'
+  | 'cousin';
 
-function getDirectRelation(member: FamilyMember, otherId: string): RelationType | null {
-  if (member.parentIds.includes(otherId)) return 'parent';
-  if (member.childrenIds.includes(otherId)) return 'child';
-  if (member.partnerId === otherId) return 'partner';
-  return null;
-}
-
-function areSiblings(member1Id: string, member2Id: string, familyData: FamilyData): boolean {
-  const member1 = familyData.members[member1Id];
-  const member2 = familyData.members[member2Id];
-  return member1.parentIds.some(parentId => member2.parentIds.includes(parentId));
-}
-
-function getRelationType(fromId: string, toId: string, familyData: FamilyData): RelationType | null {
-  const from = familyData.members[fromId];
-  const to = familyData.members[toId];
-  
-  if (!from || !to) return null;
-
-  // Direct relationships
-  const directRelation = getDirectRelation(from, toId);
-  if (directRelation) return directRelation;
-
-  // Check for ancestors (great-grandparents)
-  let current = from;
-  let generations = 0;
-  while (current && current.parentIds.length > 0) {
-    if (current.parentIds.includes(toId)) {
-      return generations === 0 ? 'parent' :
-             generations === 1 ? 'grandparent' :
-             `great${'-great'.repeat(generations - 2)}-grandparent`;
-    }
-    current = familyData.members[current.parentIds[0]];
-    generations++;
-  }
-
-  // Check for descendants (great-grandchildren)
-  current = from;
-  generations = 0;
-  let descendants = [from.id];
-  while (descendants.length > 0) {
-    const nextGen: string[] = [];
-    for (const descId of descendants) {
-      const desc = familyData.members[descId];
-      if (desc.childrenIds.includes(toId)) {
-        return generations === 0 ? 'child' :
-               generations === 1 ? 'grandchild' :
-               `great${'-great'.repeat(generations - 2)}-grandchild`;
-      }
-      nextGen.push(...desc.childrenIds);
-    }
-    descendants = nextGen;
-    generations++;
-  }
-
-  // Siblings
-  if (areSiblings(fromId, toId, familyData)) return 'sibling';
-
-  // Aunts/Uncles (by blood or marriage)
-  if (from.parentIds.some(parentId => {
-    const parent = familyData.members[parentId];
-    return (
-      // Blood aunt/uncle (parent's sibling)
-      areSiblings(parent.id, toId, familyData) ||
-      // Aunt/uncle by marriage (parent's sibling's spouse)
-      parent.parentIds.some(grandparentId => 
-        familyData.members[grandparentId].childrenIds.some(auntUncleId => {
-          const auntUncle = familyData.members[auntUncleId];
-          return auntUncle.partnerId === toId;
-        })
-      )
-    );
-  })) return 'aunt/uncle';
-
-  // Nieces/Nephews
-  if (areSiblings(fromId, from.id, familyData) && 
-    familyData.members[from.id].childrenIds.includes(toId)
-  ) return 'niece/nephew';
-
-  // Cousins
-  if (from.parentIds.some(parentId =>
-    familyData.members[parentId].parentIds.some(grandparentId =>
-      familyData.members[grandparentId].childrenIds.some(auntUncleId =>
-        familyData.members[auntUncleId].childrenIds.includes(toId)
-      )
-    )
-  )) return 'cousin';
-
-  // In-laws through partner
-  if (from.partnerId) {
-    const partnerRelation = getDirectRelation(familyData.members[from.partnerId], toId);
-    if (partnerRelation === 'parent') return 'parent-in-law';
-    if (partnerRelation === 'sibling') return 'sibling-in-law';
-  }
-
-  // In-laws through siblings
-  if (from.parentIds.some(parentId =>
-    familyData.members[parentId].childrenIds.some(siblingId =>
-      familyData.members[siblingId].partnerId === toId
-    )
-  )) return 'sibling-in-law';
-
-  // Child's partner
-  if (from.childrenIds.some(childId =>
-    familyData.members[childId].partnerId === toId
-  )) return 'child-in-law';
-
-  return null;
-}
-
-function getGenderedTerm(relationType: RelationType, gender: 'male' | 'female' | 'other'): string {
-  // Handle great-grandparent/child cases
-  if (relationType.startsWith('great')) {
-    const baseRelation = relationType.endsWith('parent') ? 'grandparent' : 'grandchild';
-    const prefix = relationType.substring(0, relationType.length - baseRelation.length);
-    const baseTerm = getGenderedTerm(baseRelation as RelationType, gender);
-    return prefix + baseTerm;
-  }
-
-  const terms: Record<RelationType, Record<string, string>> = {
-    'parent': { male: 'father', female: 'mother', other: 'parent' },
-    'child': { male: 'son', female: 'daughter', other: 'child' },
-    'sibling': { male: 'brother', female: 'sister', other: 'sibling' },
-    'partner': { male: 'husband', female: 'wife', other: 'spouse' },
-    'grandparent': { male: 'grandfather', female: 'grandmother', other: 'grandparent' },
-    'grandchild': { male: 'grandson', female: 'granddaughter', other: 'grandchild' },
-    'aunt/uncle': { male: 'uncle', female: 'aunt', other: 'parent\'s sibling' },
-    'niece/nephew': { male: 'nephew', female: 'niece', other: 'sibling\'s child' },
-    'cousin': { male: 'cousin', female: 'cousin', other: 'cousin' },
-    'parent-in-law': { male: 'father-in-law', female: 'mother-in-law', other: 'parent-in-law' },
-    'child-in-law': { male: 'son-in-law', female: 'daughter-in-law', other: 'child-in-law' },
-    'sibling-in-law': { male: 'brother-in-law', female: 'sister-in-law', other: 'sibling-in-law' }
-  };
-
-  return terms[relationType]?.[gender] || relationType;
-}
-
-function findRelationshipPath(fromId: string, toId: string, familyData: FamilyData): string[] {
-  const visited = new Set<string>();
-  const queue: Array<{ id: string; path: string[] }> = [{ id: fromId, path: [] }];
-  
-  while (queue.length > 0) {
-    const { id, path } = queue.shift()!;
-    if (visited.has(id)) continue;
-    visited.add(id);
-
-    const member = familyData.members[id];
-    const connections = [
-      ...member.parentIds.map(pid => ({ id: pid, type: 'parent' })),
-      ...member.childrenIds.map(cid => ({ id: cid, type: 'child' })),
-      ...(member.partnerId ? [{ id: member.partnerId, type: 'partner' }] : [])
-    ];
-
-    for (const { id: nextId, type } of connections) {
-      if (nextId === toId) {
-        return [...path, type];
-      }
-      if (!visited.has(nextId)) {
-        queue.push({ id: nextId, path: [...path, type] });
-      }
-    }
-  }
-  return [];
-}
-
-function simplifyRelationship(path: string[], fromId: string, toId: string, familyData: FamilyData): string | null {
-  // Check for cousin's children
-  if (path.length === 5 && 
-      path[0] === 'parent' && 
-      path[1] === 'parent' && 
-      path[2] === 'child' && 
-      path[3] === 'child' && 
-      path[4] === 'child') {
-    const targetMember = familyData.members[toId];
-    return `cousin's ${getGenderedTerm('child', targetMember.gender)}`;
-  }
-
-  // Check for uncle/aunt's parent (through marriage or blood)
-  if (path.length === 5 &&
-      path[0] === 'parent' &&
-      path[1] === 'parent' &&
-      path[2] === 'child' &&
-      path[3] === 'partner' &&
-      path[4] === 'parent') {
-    // Find the uncle/aunt (the partner in this case)
-    const currentId = fromId;
-    const parentId = familyData.members[currentId].parentIds[0];
-    const grandparentId = familyData.members[parentId].parentIds[0];
-    const auntUnclePartnerId = familyData.members[grandparentId].childrenIds
-      .find(id => familyData.members[id].partnerId && 
-        familyData.members[familyData.members[id].partnerId!].parentIds.includes(toId));
-
-    if (auntUnclePartnerId) {
-      // The actual uncle/aunt is the partner of the person we found
-      const auntUncleId = familyData.members[auntUnclePartnerId].partnerId!;
-      const targetMember = familyData.members[toId];
-      return `${getGenderedTerm('aunt/uncle', familyData.members[auntUncleId].gender)}'s ${getGenderedTerm('parent', targetMember.gender)}`;
-    }
-  }
-
-  // Add more patterns here
-  return null;
-}
-
-function buildPossessiveChain(path: string[], fromId: string, toId: string, familyData: FamilyData): string {
-  if (path.length === 0) return '';
-
-  // Try to simplify the relationship first
-  const simplified = simplifyRelationship(path, fromId, toId, familyData);
-  if (simplified) return simplified;
-
-  const terms: string[] = [];
-  let currentId = fromId;
-
-  for (let i = 0; i < path.length; i++) {
-    const type = path[i];
-    let nextId: string;
-
-    const current = familyData.members[currentId];
-    switch (type) {
-      case 'parent':
-        nextId = current.parentIds.find(pid => {
-          const parent = familyData.members[pid];
-          return parent.childrenIds.includes(
-            i < path.length - 1 ? 
-            familyData.members[currentId].parentIds[0] : toId
-          );
-        }) || current.parentIds[0];
-        terms.push(getGenderedTerm('parent', familyData.members[nextId].gender));
-        break;
-      case 'child':
-        nextId = current.childrenIds.find(cid => {
-          const child = familyData.members[cid];
-          return i === path.length - 1 ? 
-            cid === toId : 
-            child.childrenIds.includes(toId);
-        }) || current.childrenIds[0];
-        terms.push(getGenderedTerm('child', familyData.members[nextId].gender));
-        break;
-      case 'partner':
-        nextId = current.partnerId!;
-        terms.push(getGenderedTerm('partner', familyData.members[nextId].gender));
-        break;
-      default:
-        nextId = currentId;
-    }
-    currentId = nextId;
-
-    // Add possessive form for all except the last term
-    if (i < path.length - 1) {
-      const term = terms[terms.length - 1];
-      terms[terms.length - 1] = term + (term.endsWith('s') ? '\'' : '\'s');
-    }
-  }
-
-  return terms.join(' ');
-}
-
-function findCommonAncestor(fromId: string, toId: string, familyData: FamilyData): { 
+// Helper to find the most recent common ancestor (MRCA) and distances
+interface AncestorResult {
   ancestor: string | null;
-  dist1: number;
-  dist2: number;
-} {
+  dist1: number;  // Distance from person1 to MRCA
+  dist2: number;  // Distance from person2 to MRCA
+}
+
+function findMRCA(id1: string, id2: string, familyData: FamilyData): AncestorResult {
   const ancestors1 = new Map<string, number>();
   const ancestors2 = new Map<string, number>();
 
-  function traverseUp(id: string, ancestors: Map<string, number>, dist: number) {
+  function getAncestors(id: string, distMap: Map<string, number>, dist: number = 0) {
+    if (distMap.has(id)) return;
+    distMap.set(id, dist);
     const member = familyData.members[id];
-    ancestors.set(id, dist);
-    member.parentIds.forEach(pid => {
-      if (!ancestors.has(pid)) {
-        traverseUp(pid, ancestors, dist + 1);
-      }
-    });
+    member.parentIds.forEach(pid => getAncestors(pid, distMap, dist + 1));
   }
 
-  traverseUp(fromId, ancestors1, 0);
-  traverseUp(toId, ancestors2, 0);
+  getAncestors(id1, ancestors1);
+  getAncestors(id2, ancestors2);
 
-  let closestAncestor = null;
   let minTotalDist = Infinity;
-  let dist1 = 0, dist2 = 0;
+  let result: AncestorResult = { ancestor: null, dist1: 0, dist2: 0 };
 
-  ancestors1.forEach((d1, id) => {
-    if (ancestors2.has(id)) {
-      const d2 = ancestors2.get(id)!;
-      const totalDist = d1 + d2;
+  ancestors1.forEach((dist1, ancestorId) => {
+    const dist2 = ancestors2.get(ancestorId);
+    if (dist2 !== undefined) {
+      const totalDist = dist1 + dist2;
       if (totalDist < minTotalDist) {
         minTotalDist = totalDist;
-        closestAncestor = id;
-        dist1 = d1;
-        dist2 = d2;
+        result = { ancestor: ancestorId, dist1, dist2 };
       }
     }
   });
 
-  return { ancestor: closestAncestor, dist1, dist2 };
+  return result;
 }
 
-function findBaseRelationship(fromId: string, toId: string, familyData: FamilyData, checkPartner: boolean = true): string | null {
+// Get gender-specific term for a basic relationship
+function getGenderedTerm(relation: BasicRelationType, gender: Gender): string {
+  const terms: Record<BasicRelationType, Record<Gender, string>> = {
+    parent: { male: 'father', female: 'mother', other: 'parent' },
+    child: { male: 'son', female: 'daughter', other: 'child' },
+    sibling: { male: 'brother', female: 'sister', other: 'sibling' },
+    spouse: { male: 'husband', female: 'wife', other: 'spouse' },
+    cousin: { male: 'cousin', female: 'cousin', other: 'cousin' }
+  };
+  return terms[relation][gender];
+}
+
+// Add appropriate prefix for ancestor generations
+function addGenerationalPrefix(term: string, generations: number): string {
+  if (generations <= 1) return term;
+  if (generations === 2) return `grand${term}`;
+  return `great-`.repeat(generations - 2) + `grand${term}`;
+}
+
+function getRelationshipFromMRCA(dist1: number, dist2: number, targetGender: Gender, fromId?: string, toId?: string, familyData?: FamilyData): string {
+  // Direct lineage cases
+  if (dist1 === 0) {
+    return addGenerationalPrefix(
+      getGenderedTerm('child', targetGender), 
+      dist2
+    );
+  }
+  if (dist2 === 0) {
+    return addGenerationalPrefix(
+      getGenderedTerm('parent', targetGender), 
+      dist1
+    );
+  }
+
+  // Sibling cases
+  if (dist1 === 1 && dist2 === 1) {
+    return getGenderedTerm('sibling', targetGender);
+  }
+
+  // Aunt/Uncle cases
+  if (dist2 === 1 && dist1 > 1) {
+    const prefix = dist1 === 2 ? '' : 
+                  dist1 === 3 ? 'great-' : 
+                  `great-great-`.repeat(dist1 - 3);
+    return prefix + (targetGender === 'female' ? 'aunt' : 'uncle');
+  }
+
+  // Niece/Nephew cases
+  if (dist1 === 1 && dist2 > 1) {
+    const prefix = dist2 === 2 ? '' : 
+                  dist2 === 3 ? 'great-' : 
+                  `great-great-`.repeat(dist2 - 3);
+    return prefix + (targetGender === 'female' ? 'niece' : 'nephew');
+  }
+
+  // Cousin cases
+  if (dist1 === dist2) {
+    const degree = dist1 - 1;
+    if (degree === 1) return 'cousin';
+    return `${degree}${getNumberSuffix(degree)} cousin`;
+  }
+
+  // For more complex relationships, use descriptive path
+  if (fromId && toId && familyData) {
+    return buildDescriptivePath(dist1, dist2, targetGender, fromId, toId, familyData);
+  }
+  return buildDescriptivePath(dist1, dist2, targetGender, '', '', { members: {} }); // fallback
+}
+
+function getNumberSuffix(num: number): string {
+  if (num === 1) return 'st';
+  if (num === 2) return 'nd';
+  if (num === 3) return 'rd';
+  return 'th';
+}
+
+function buildDescriptivePath(dist1: number, dist2: number, targetGender: Gender, fromId: string, toId: string, familyData: FamilyData): string {
+  // Find the actual path through the family tree
+  function findActualPath(currentId: string, targetId: string, depth: number, path: string[] = []): string[] | null {
+    if (depth < 0) return null;
+    if (currentId === targetId) return path;
+
+    const current = familyData.members[currentId];
+
+    // Try parents
+    for (const parentId of current.parentIds) {
+      const result = findActualPath(parentId, targetId, depth - 1, [...path, parentId]);
+      if (result) return result;
+    }
+
+    // Try children
+    for (const childId of current.childrenIds) {
+      const result = findActualPath(childId, targetId, depth - 1, [...path, childId]);
+      if (result) return result;
+    }
+
+    return null;
+  }
+
+  // Handle cases like "parent's cousin" or "cousin's child"
+  if (dist1 > dist2) {
+    const baseRelation = getRelationshipFromMRCA(dist1 - dist2, 0, targetGender, fromId, toId, familyData);
+    // Find the actual parent in the path
+    const pathToTarget = findActualPath(fromId, toId, dist1 + dist2, []);
+    if (pathToTarget && pathToTarget.length > 0) {
+      const intermediateId = pathToTarget[0]; // First step in the path
+      const intermediateGender = familyData.members[intermediateId].gender;
+      const intermediateRelation = getGenderedTerm('parent', intermediateGender);
+      return `${intermediateRelation}'s cousin`;
+    }
+    return `${baseRelation}'s cousin`;
+  } else {
+    const baseRelation = getRelationshipFromMRCA(0, dist2 - dist1, targetGender, fromId, toId, familyData);
+    return `cousin's ${baseRelation}`;
+  }
+}
+
+function getSpouseBasedRelationship(
+  fromId: string, 
+  toId: string, 
+  familyData: FamilyData,
+  visited = new Set<string>()
+): string | null {
   const from = familyData.members[fromId];
   const to = familyData.members[toId];
 
-  // Handle direct relationships first
-  if (from.parentIds.includes(toId)) return 'parent';
-  if (from.childrenIds.includes(toId)) return 'child';
-  if (from.partnerId === toId) return 'partner';
+  // Prevent infinite loops
+  if (visited.has(fromId)) return null;
+  visited.add(fromId);
 
-  // Find relationship through common ancestor
-  const { ancestor, dist1, dist2 } = findCommonAncestor(fromId, toId, familyData);
-  if (ancestor) {
-    // Siblings
-    if (dist1 === 1 && dist2 === 1) return 'sibling';
-    
-    // Cousins
-    if (dist1 === 2 && dist2 === 2) return 'cousin';
-
-    // Grandparent
-    if (dist1 === 2 && dist2 === 0) return 'grandparent';
-
-    // Grandchild
-    if (dist1 === 0 && dist2 === 2) return 'grandchild';
-
-    // Aunt/Uncle
-    if (dist1 === 2 && dist2 === 1) return 'aunt/uncle';
-    
-    // Niece/Nephew
-    if (dist1 === 1 && dist2 === 2) return 'niece/nephew';
+  // Direct spouse
+  if (from.partnerId === toId) {
+    return getGenderedTerm('spouse', to.gender);
   }
 
-  // Check for relationships through marriage
-  if (checkPartner) {
-    // Check if target is someone's partner
-    if (to.partnerId) {
-      const partnerBaseRelation = findBaseRelationship(fromId, to.partnerId, familyData, false);
-      if (partnerBaseRelation === 'aunt/uncle') {
-        return 'aunt/uncle'; // Return just aunt/uncle instead of "aunt/uncle's partner"
-      }
-      if (partnerBaseRelation) {
-        return `${partnerBaseRelation} partner`;
-      }
-    }
+  // Check if target is spouse of someone we have a relationship with
+  for (const memberId of Object.keys(familyData.members)) {
+    const member = familyData.members[memberId];
+    if (member.partnerId === toId) {
+      const relationToSpouse = getRelationship(fromId, memberId, familyData, new Set(visited));
+      if (relationToSpouse === 'no relation') continue;
 
-    // Check if target is a partner of someone we have a relationship with
-    const partnerOf = Object.values(familyData.members)
-      .find(member => member.partnerId === toId);
-    if (partnerOf) {
-      const baseRelation = findBaseRelationship(fromId, partnerOf.id, familyData, false);
-      if (baseRelation === 'aunt/uncle') {
-        return 'aunt/uncle'; // Return just aunt/uncle for spouse of aunt/uncle
+      // Handle basic family unit cases
+      switch (relationToSpouse) {
+        case 'father':
+        case 'mother':
+          return getGenderedTerm('parent', to.gender);
+        case 'grandfather':
+        case 'grandmother':
+          return 'grand' + getGenderedTerm('parent', to.gender);
+        case 'great-grandfather':
+        case 'great-grandmother':
+          return 'great-grand' + getGenderedTerm('parent', to.gender);
       }
+
+      // Special cases for aunt/uncle relationships
+      if (relationToSpouse === 'uncle') return 'aunt';
+      if (relationToSpouse === 'great-uncle') return 'great-aunt';
+      if (relationToSpouse.endsWith('great-uncle')) return relationToSpouse.replace('uncle', 'aunt');
+      
+      // For other cases, append "'s wife/husband/spouse"
+      return `${relationToSpouse}'s ${getGenderedTerm('spouse', to.gender)}`;
+    }
+  }
+
+  // Check relationships through spouse's family
+  if (from.partnerId) {
+    const throughSpouse = getRelationship(from.partnerId, toId, familyData, visited);
+    if (throughSpouse && throughSpouse !== 'no relation') {
+      return throughSpouse + '-in-law';
     }
   }
 
   return null;
 }
 
-function buildRelationship(fromId: string, toId: string, familyData: FamilyData): string {
-  const baseRelation = findBaseRelationship(fromId, toId, familyData);
-  if (!baseRelation) {
-    // Only fall back to path-based as a last resort
-    const path = findRelationshipPath(fromId, toId, familyData);
-    return buildPossessiveChain(path, fromId, toId, familyData);
+export function getRelationship(
+  fromId: string, 
+  toId: string, 
+  familyData: FamilyData,
+  visited = new Set<string>()
+): string {
+  if (fromId === toId) return 'self';
+
+  const from = familyData.members[fromId];
+  const to = familyData.members[toId];
+
+  // Try spouse-based relationship first
+  const spouseRelation = getSpouseBasedRelationship(fromId, toId, familyData, visited);
+  if (spouseRelation) return spouseRelation;
+
+  // Find relationship through common ancestor
+  const { ancestor, dist1, dist2 } = findMRCA(fromId, toId, familyData);
+  
+  if (ancestor) {
+    return getRelationshipFromMRCA(dist1, dist2, to.gender, fromId, toId, familyData);
   }
 
-  // Handle special cases for partner relationships
-  if (baseRelation.endsWith(' partner')) {
-    const mainRelation = baseRelation.slice(0, -' partner'.length);
-    const gender = familyData.members[toId].gender;
-    return `${mainRelation}'s ${getGenderedTerm('partner', gender)}`;
-  }
-
-  return getGenderedTerm(baseRelation as RelationType, familyData.members[toId].gender);
-}
-
-export function getRelationship(fromId: string, toId: string, familyData: FamilyData): string {
-  // Use the new relationship builder that can handle complex relationships
-  return buildRelationship(fromId, toId, familyData);
+  return 'no relation';
 }
 
 export function getRelationshipToUser(
-  memberId: string,
-  username: string | null,
+  memberId: string, 
+  username: string | null, 
   familyData: FamilyData
 ): string {
   if (!username) return '';
 
   const currentUser = Object.values(familyData.members)
     .find(member => member.username === username);
-  
+
   if (!currentUser) return '';
   if (currentUser.id === memberId) return 'you';
 

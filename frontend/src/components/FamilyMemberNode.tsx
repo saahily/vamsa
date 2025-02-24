@@ -12,14 +12,16 @@ interface FamilyMemberNodeProps extends NodeProps {
     onFocus: (memberId: string | null) => void;
     isFocused: boolean;
     currentYear: number;
+    isCurrentUser: boolean;
   };
 }
 
-export function FamilyMemberNode({ data: { member, nodeType, onFocus, isFocused, currentYear }, selected }: FamilyMemberNodeProps) {
+export function FamilyMemberNode({ data: { member, nodeType, onFocus, isFocused, currentYear, isCurrentUser }, selected }: FamilyMemberNodeProps) {
   const navigate = useNavigate();
   const [isHovered, setIsHovered] = useState(false);
   
   const getBorderColor = () => {
+    if (isCurrentUser) return 'border-transparent';
     if (nodeType === 'ancestor') return 'border-amber-500/50';
     if (nodeType === 'descendant') return 'border-emerald-500/50';
     if (nodeType === 'focused') return 'border-blue-500/50';
@@ -28,6 +30,7 @@ export function FamilyMemberNode({ data: { member, nodeType, onFocus, isFocused,
   };
 
   const getHoverBorderColor = () => {
+    if (isCurrentUser) return '';
     if (nodeType === 'ancestor') return 'group-hover:border-amber-500/70';
     if (nodeType === 'descendant') return 'group-hover:border-emerald-500/70';
     if (nodeType === 'focused') return 'group-hover:border-blue-500/70';
@@ -43,10 +46,9 @@ export function FamilyMemberNode({ data: { member, nodeType, onFocus, isFocused,
     return 'bg-slate-900/50';
   };
 
-  // Enhanced glow effect for focused nodes with thinner border
-  const getGlowEffect = () => {
-    if (nodeType === 'focused') {
-      return 'ring-2 ring-blue-500/50 shadow-[0_0_40px_rgba(59,130,246,0.6)]';
+  const getWrapperClass = () => {
+    if (isCurrentUser) {
+      return 'before:absolute before:inset-0 before:-z-10 before:rounded-lg before:p-[1px] before:bg-gradient-to-r before:from-blue-400/40 before:via-purple-400/40 before:to-blue-400/40 before:bg-[length:200%_100%] before:animate-gradient';
     }
     return '';
   };
@@ -108,9 +110,9 @@ export function FamilyMemberNode({ data: { member, nodeType, onFocus, isFocused,
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => navigate(`/member/${member.id}`)}
-        className={`rounded-lg shadow-lg p-3 w-36 cursor-grab active:cursor-grabbing transition-all duration-300 backdrop-blur-lg border ${
+        className={`relative rounded-lg shadow-lg p-3 w-36 cursor-grab active:cursor-grabbing transition-all duration-300 backdrop-blur-lg border ${
           getBorderColor()
-        } ${getHoverBorderColor()} ${getBackgroundColor()} ${getGlowEffect()}`}
+        } ${getHoverBorderColor()} ${getBackgroundColor()} ${getWrapperClass()}`}
       >
         <div className="flex flex-col items-center space-y-2">
           <div className="relative">

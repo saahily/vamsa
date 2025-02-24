@@ -16,6 +16,7 @@ import 'reactflow/dist/style.css';
 import { FamilyData, FamilyMember } from '../types/family';
 import { FamilyMemberNode } from './FamilyMemberNode';
 import { FamilyEdge } from './FamilyEdge';
+import { useAuth } from '../contexts/AuthContext';
 
 const nodeTypes = {
   familyMember: FamilyMemberNode,
@@ -53,6 +54,7 @@ const FamilyTreeInner: React.FC<FamilyTreeProps> = ({
   const { fitView, setViewport, getViewport } = useReactFlow();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const { username } = useAuth();
 
   // Apply initial viewport when component mounts
   useEffect(() => {
@@ -372,6 +374,7 @@ const FamilyTreeInner: React.FC<FamilyTreeProps> = ({
           onFocus: handleFocusChange,
           isFocused: focusedMemberId === member.id,
           currentYear,
+          isCurrentUser: username === member.username,
         },
         draggable: true,
       });
@@ -431,7 +434,8 @@ const FamilyTreeInner: React.FC<FamilyTreeProps> = ({
     getConnectedMembers,
     isVisible,
     isMarriageVisible,
-    handleFocusChange
+    handleFocusChange,
+    username
   ]);
 
   useEffect(() => {
